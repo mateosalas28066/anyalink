@@ -1,16 +1,28 @@
-# anyalink_1
+# Anyalink 
 
-A new Flutter project.
+Panel de domótica minimalista para controlar y monitorear dispositivos del hogar.
+Flutter (Clean + Riverpod) + Supabase (Realtime) + Bridge local TP-Link Kasa.
 
-## Getting Started
+## Características
 
-This project is a starting point for a Flutter application.
+Dashboard limpio (tema claro) con tarjetas blancas.
 
-A few resources to get you started if this is your first Flutter project:
+Clean Architecture + Riverpod para gestión de estado.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+Supabase: Auth (opcional), tabla devices, Realtime para cambios instantáneos.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Bridge local con python-kasa para sincronizar Kasa ↔ Supabase ↔ App (bidireccional).
+
+## Tech stack
+
+Flutter • Dart
+
+Riverpod
+
+Supabase (Postgres + Realtime)
+
+Python (bridge) + python-kasa
+
+## Estructura
+
+
