@@ -1,0 +1,9 @@
+﻿{
+  "supabase_url": "https://your-project.supabase.co",
+  "supabase_anon_key": "replace_with_anon_key",
+  "device_alias": "Device Alias",
+  "kasa_ip": "192.168.0.100",
+  "kasa_mac": "AA:BB:CC:DD:EE:FF",
+  "poll_secs": 2,
+  "rediscover_every": 30
+}
