@@ -1,126 +1,54 @@
-﻿# bridge/kasa_bridge_alias.py
-# Comentario (ES): Bridge Kasa <-> Supabase usando alias, configurable por variables de entorno o archivo JSON externo.
-# - Prefiere variables de entorno (no guarda credenciales en el repositorio).
-# - Opcional: --config path/to/config.json como fallback para dispositivos específicos.
+# kasa_bridge_alias.py
+# Comentario (ES): Bridge Kasa <-> Supabase por ALIAS (sin .bat, credenciales en código).
+# - SmartBulb (estable), discover por MAC para refrescar IP.
+# - Cooldown para evitar rebotes DB<->Kasa.
 
-import argparse
+import time
 import asyncio
 import datetime as dt
-import json
-import os
-from pathlib import Path
 from typing import Optional, Tuple
 
 import requests
-from kasa import Discover
+from kasa import SmartBulb, Discover
 
-REQUIRED_KEYS = [
-    "SUPABASE_URL",
-    "SUPABASE_ANON",
-    "DEVICE_ALIAS",
-    "KASA_IP",
-    "KASA_MAC",
-]
-OPTIONAL_KEYS = {
-    "POLL_SECS": 2,
-    "REDISCOVER_EVERY": 30,
+# ---------- TUS DATOS (hardcode) ----------
+SUPABASE_URL = "https://vnalfxtgewdefpoxkuwu.supabase.co".rstrip("/")
+SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZuYWxmeHRnZXdkZWZwb3hrdXd1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg1NjUwNjQsImV4cCI6MjA3NDE0MTA2NH0.3OVHiVAgI9WUJZ4ar3YVOH49N_IAEEwN2f7TBJhXg9M"
+DEVICE_ALIAS = "Lampara"
+KASA_MAC = "28:87:ba:4e:77:a1"  # para revalidar IP si cambia
+KASA_IP_HINT = "192.168.0.2"  # IP actual conocida
+# -----------------------------------------
+
+POLL_SECS = 1
+REDISCOVER_EVERY = 30
+WRITE_COOLDOWN = 0.8  # seg: evita eco DB<->Kasa
+
+HDRS = {
+    "apikey": SUPABASE_ANON,
+    "Authorization": f"Bearer {SUPABASE_ANON}",
+    "Content-Type": "application/json",
 }
 
-
-def load_settings(config_path: Optional[Path]):
-    env_values = {key: os.environ.get(key) for key in REQUIRED_KEYS}
-    if all(env_values.values()):
-        poll_secs = int(os.environ.get("POLL_SECS", OPTIONAL_KEYS["POLL_SECS"]))
-        rediscover_every = int(os.environ.get("REDISCOVER_EVERY", OPTIONAL_KEYS["REDISCOVER_EVERY"]))
-        return {
-            "supabase_url": env_values["SUPABASE_URL"].rstrip("/"),
-            "supabase_anon": env_values["SUPABASE_ANON"],
-            "device_alias": env_values["DEVICE_ALIAS"],
-            "kasa_ip": env_values["KASA_IP"],
-            "kasa_mac": env_values["KASA_MAC"],
-            "poll_secs": poll_secs,
-            "rediscover_every": rediscover_every,
-        }
-
-    candidate_paths = []
-    if config_path is not None:
-        candidate_paths.append(config_path)
-    else:
-        config_dir = Path(__file__).parent
-        candidate_paths.extend([
-            config_dir / 'config.local.json',
-            config_dir / 'config.json',
-        ])
-
-    for cfg in candidate_paths:
-        if cfg.exists():
-            data = json.loads(cfg.read_text(encoding='utf-8-sig'))
-            missing = [
-                key for key in [
-                    'supabase_url',
-                    'supabase_anon_key',
-                    'device_alias',
-                    'kasa_ip',
-                    'kasa_mac',
-                ]
-                if not data.get(key)
-            ]
-            if missing:
-                raise ValueError(f"Config file '{cfg}' is missing keys: {', '.join(missing)}")
-            return {
-                'supabase_url': str(data['supabase_url']).rstrip('/'),
-                'supabase_anon': str(data['supabase_anon_key']),
-                'device_alias': str(data['device_alias']),
-                'kasa_ip': str(data['kasa_ip']),
-                'kasa_mac': str(data['kasa_mac']),
-                'poll_secs': int(data.get('poll_secs', OPTIONAL_KEYS['POLL_SECS'])),
-                'rediscover_every': int(data.get('rediscover_every', OPTIONAL_KEYS['REDISCOVER_EVERY'])),
-            }
-
-    raise RuntimeError(
-        "Missing required settings. Set environment variables "
-        "(SUPABASE_URL, SUPABASE_ANON, DEVICE_ALIAS, KASA_IP, KASA_MAC) "
-        "or provide a config file via --config."
-    )
+_LAST_WRITE_TS = 0.0
 
 
-def _norm_mac(value: str) -> str:
-    return "".join(ch for ch in value.lower() if ch in "0123456789abcdef")
+def _can_write() -> bool:
+    return (time.time() - _LAST_WRITE_TS) > WRITE_COOLDOWN
 
 
-async def connect_device_by_ip(ip: str):
-    device = await Discover.discover_single(ip)
-    if device is None:
-        raise RuntimeError(f"No Kasa device discovered at {ip}")
-    if hasattr(device, "update"):
-        await device.update()
-    return device
+def _mark_write():
+    global _LAST_WRITE_TS
+    _LAST_WRITE_TS = time.time()
 
 
-async def discover_device_by_mac(mac_norm: str):
-    try:
-        found = await Discover.discover()
-    except Exception as err:
-        print("Discover failed:", err)
-        return None, None
-
-    for ip, device in found.items():
-        try:
-            if hasattr(device, "update"):
-                await device.update()
-            mac = getattr(device, "mac", None) or getattr(device, "mac_address", None) or ""
-            if _norm_mac(mac) == mac_norm:
-                return device, ip
-        except Exception as inner_err:
-            print("MAC discovery attempt failed:", inner_err)
-            continue
-    return None, None
+def _norm_mac(s: str) -> str:
+    return "".join(c for c in s.lower() if c in "0123456789abcdef")
 
 
-def get_db_row_by_alias(settings, alias: str) -> Optional[Tuple[str, bool, str]]:
-    url = f"{settings['supabase_url']}/rest/v1/devices"
+def get_db_row_by_alias(alias: str) -> Optional[Tuple[str, bool, str]]:
+    url = f"{SUPABASE_URL}/rest/v1/devices"
     params = {"alias": f"eq.{alias}", "select": "id,state,updated_at"}
-    resp = requests.get(url, headers=settings['hdrs'], params=params, timeout=10)
+    resp = requests.get(url, headers=HDRS, params=params, timeout=10)
     resp.raise_for_status()
     data = resp.json()
     if not data:
@@ -129,8 +57,8 @@ def get_db_row_by_alias(settings, alias: str) -> Optional[Tuple[str, bool, str]]
     return row["id"], bool(row["state"]), row["updated_at"]
 
 
-def update_db_state_by_id(settings, row_id: str, new_state: bool) -> None:
-    url = f"{settings['supabase_url']}/rest/v1/devices"
+def update_db_state_by_id(row_id: str, new_state: bool) -> None:
+    url = f"{SUPABASE_URL}/rest/v1/devices"
     params = {"id": f"eq.{row_id}"}
     payload = {
         "state": new_state,
@@ -140,7 +68,7 @@ def update_db_state_by_id(settings, row_id: str, new_state: bool) -> None:
         url,
         params=params,
         json=payload,
-        headers=settings['hdrs_with_prefer'],
+        headers={**HDRS, "Prefer": "return=minimal"},
         timeout=10,
     )
     resp.raise_for_status()
@@ -150,30 +78,52 @@ def parse_ts(ts: str) -> dt.datetime:
     return dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
 
-async def ensure_device(mac_norm: str, cached_ip: Optional[str]):
-    if cached_ip:
+async def find_ip_by_mac(mac_norm: str) -> Optional[str]:
+    try:
+        found = await Discover.discover()
+    except Exception as e:
+        print("Discover failed:", e)
+        return None
+    for ip, dev in found.items():
         try:
-            device = await connect_device_by_ip(cached_ip)
-            return device, cached_ip
-        except Exception as err:
-            print(f"Connection via cached IP {cached_ip} failed:", err)
+            await dev.update()
+            mac = getattr(dev, "mac", None) or getattr(dev, "mac_address", None) or ""
+            if _norm_mac(mac) == mac_norm:
+                return ip
+        except Exception:
+            continue
+    return None
 
+
+async def connect_bulb(ip: str) -> SmartBulb:
+    bulb = SmartBulb(ip)
+    await bulb.update()
+    return bulb
+
+
+async def ensure_bulb(mac_norm: Optional[str], ip_hint: Optional[str]) -> Tuple[SmartBulb, str]:
+    if ip_hint:
+        try:
+            b = await connect_bulb(ip_hint)
+            return b, ip_hint
+        except Exception as e:
+            print(f"Direct IP connect failed for {ip_hint}:", e)
     if mac_norm:
-        device, ip = await discover_device_by_mac(mac_norm)
-        if device is not None and ip:
-            return device, ip
-        print("Discovery by MAC failed; ensure MAC is correct and device reachable.")
-
+        ip = await find_ip_by_mac(mac_norm)
+        if ip:
+            b = await connect_bulb(ip)
+            return b, ip
+        print("MAC discovery failed; check device is on and same LAN.")
     raise RuntimeError("Could not connect to Kasa device (IP/MAC).")
 
 
-async def run_bridge(settings) -> None:
-    alias = settings['device_alias']
-    mac_norm = _norm_mac(settings['kasa_mac'])
-    cached_ip = settings['kasa_ip'] or None
+async def main():
+    print(f"[CFG] alias={DEVICE_ALIAS} mac={KASA_MAC} ip_hint={KASA_IP_HINT}")
+    mac_norm = _norm_mac(KASA_MAC) if KASA_MAC else None
+    ip_hint = KASA_IP_HINT or None
 
-    device, cached_ip = await ensure_device(mac_norm, cached_ip)
-    print("Bridge (alias) running. Initial IP:", cached_ip or "(discover)")
+    bulb, current_ip = await ensure_bulb(mac_norm, ip_hint)
+    print("Bridge running. Initial IP:", current_ip)
 
     prev_db_state: Optional[bool] = None
     prev_kasa_state: Optional[bool] = None
@@ -181,97 +131,77 @@ async def run_bridge(settings) -> None:
 
     while True:
         try:
-            row = get_db_row_by_alias(settings, alias)
+            row = get_db_row_by_alias(DEVICE_ALIAS)
             if row is None:
-                print(f"DB row not found for alias '{alias}'.")
-                await asyncio.sleep(settings['poll_secs'])
+                print(f"DB row not found for alias '{DEVICE_ALIAS}'.")
+                await asyncio.sleep(POLL_SECS)
                 continue
+            row_id, db_state, db_ts = row
+            _ = parse_ts(db_ts)
 
-            row_id, db_state, db_ts_str = row
-            _ = parse_ts(db_ts_str)
-
+            # Refrescar bombilla
             try:
-                if hasattr(device, "update"):
-                    await device.update()
-            except Exception as err:
-                print("Device update failed; reconnecting...", err)
-                device, cached_ip = await ensure_device(mac_norm, None)
-                print("Reconnected to IP:", cached_ip or "(discover)")
-                if hasattr(device, "update"):
-                    await device.update()
+                await bulb.update()
+            except Exception as e:
+                print("Bulb update failed; reconnecting...", e)
+                try:
+                    bulb = await connect_bulb(current_ip)
+                except Exception:
+                    bulb, current_ip = await ensure_bulb(mac_norm, None)
+                print("Reconnected to IP:", current_ip)
+                await bulb.update()
 
-            kasa_state = bool(getattr(device, "is_on"))
+            kasa_state = bool(bulb.is_on)
 
-            db_changed = prev_db_state is not None and db_state != prev_db_state
-            kasa_changed = prev_kasa_state is not None and kasa_state != prev_kasa_state
+            db_changed = (prev_db_state is not None) and (db_state != prev_db_state)
+            kasa_changed = (prev_kasa_state is not None) and (kasa_state != prev_kasa_state)
 
-            if db_changed:
-                if db_state and not kasa_state and hasattr(device, "turn_on"):
-                    await device.turn_on()
-                    if hasattr(device, "update"):
-                        await device.update()
-                elif (not db_state) and kasa_state and hasattr(device, "turn_off"):
-                    await device.turn_off()
-                    if hasattr(device, "update"):
-                        await device.update()
+            if db_changed and _can_write():
+                # DB -> Kasa
+                if db_state and not kasa_state:
+                    await bulb.turn_on()
+                    await bulb.update()
+                elif (not db_state) and kasa_state:
+                    await bulb.turn_off()
+                    await bulb.update()
+                _mark_write()
                 print(f"Applied DB->Kasa: {db_state}")
 
-            elif kasa_changed:
-                update_db_state_by_id(settings, row_id, kasa_state)
+            elif kasa_changed and _can_write():
+                # Kasa -> DB
+                update_db_state_by_id(row_id, kasa_state)
+                _mark_write()
                 print(f"Applied Kasa->DB: {kasa_state}")
 
             else:
-                if kasa_state != db_state:
-                    if db_state and not kasa_state and hasattr(device, "turn_on"):
-                        await device.turn_on()
-                        if hasattr(device, "update"):
-                            await device.update()
-                    elif (not db_state) and kasa_state and hasattr(device, "turn_off"):
-                        await device.turn_off()
-                        if hasattr(device, "update"):
-                            await device.update()
+                if kasa_state != db_state and _can_write():
+                    if db_state and not kasa_state:
+                        await bulb.turn_on()
+                        await bulb.update()
+                    elif (not db_state) and kasa_state:
+                        await bulb.turn_off()
+                        await bulb.update()
+                    _mark_write()
                     print(f"Aligned to DB (fallback): {db_state}")
 
             prev_db_state = db_state
-            prev_kasa_state = kasa_state
+            prev_kasa_state = bool(bulb.is_on)
 
+            # Revalidar IP periódicamente (cambio por DHCP)
             cycles += 1
-            if mac_norm and cycles >= settings['rediscover_every']:
-                device2, ip2 = await discover_device_by_mac(mac_norm)
-                if device2 is not None and ip2 and ip2 != (cached_ip or ""):
+            if mac_norm and cycles >= REDISCOVER_EVERY:
+                ip2 = await find_ip_by_mac(mac_norm)
+                if ip2 and ip2 != current_ip:
                     print("IP changed by DHCP; switching to", ip2)
-                    device = device2
-                    cached_ip = ip2
+                    bulb = await connect_bulb(ip2)
+                    current_ip = ip2
                 cycles = 0
 
         except Exception as loop_err:
             print("Bridge loop error:", loop_err)
 
-        await asyncio.sleep(settings['poll_secs'])
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Supabase <-> Kasa bridge by alias")
-    parser.add_argument(
-        "--config",
-        type=Path,
-        help="Ruta opcional a archivo JSON con credenciales y ajustes (solo si no usas variables de entorno)",
-    )
-    args = parser.parse_args()
-
-    settings = load_settings(args.config)
-    settings['hdrs'] = {
-        "apikey": settings['supabase_anon'],
-        "Authorization": f"Bearer {settings['supabase_anon']}",
-        "Content-Type": "application/json",
-    }
-    settings['hdrs_with_prefer'] = {
-        **settings['hdrs'],
-        "Prefer": "return=minimal",
-    }
-
-    asyncio.run(run_bridge(settings))
+        await asyncio.sleep(POLL_SECS)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

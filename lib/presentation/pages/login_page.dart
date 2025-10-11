@@ -43,10 +43,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         _error = e.toString();
       });
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
         });
+      }
     }
   }
 
@@ -67,10 +68,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         _error = e.toString();
       });
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
         });
+      }
     }
   }
 
