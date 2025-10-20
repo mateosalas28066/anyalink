@@ -1,5 +1,5 @@
 // lib/core/env.dart
-// Comentario (ES): Config de entorno simple.
+// Comentario (ES): Config de entorno simple + flags de demo.
 
 class Env {
   static const supabaseUrl = 'https://vnalfxtgewdefpoxkuwu.supabase.co';
@@ -7,7 +7,11 @@ class Env {
 
   static const lightAlias = 'Lampara';
 
-  // ?? temporal: mejor estabilidad con polling
+  // Fuente de datos (polling estable por ahora)
   static const useRealtime = false;
+
+  // Demo UI
+  static const addDemoTiles = true;
+  static const cameraAsset = 'assets/sample/camera.jpg';
 }
 

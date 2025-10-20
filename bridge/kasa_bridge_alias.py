@@ -1,4 +1,4 @@
-# kasa_bridge_alias.py
+﻿# kasa_bridge_alias.py
 # Comentario (ES): Bridge Kasa <-> Supabase por ALIAS (sin .bat, credenciales en código).
 # - SmartBulb (estable), discover por MAC para refrescar IP.
 # - Cooldown para evitar rebotes DB<->Kasa.
