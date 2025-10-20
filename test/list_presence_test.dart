@@ -6,6 +6,6 @@ void main() {
   testWidgets('Home shows device list title', (tester) async {
     await tester.pumpWidget(buildTestApp());
     await tester.pumpAndSettle();
-    expect(find.text('Dispositivos'), findsWidgets);
+    expect(find.text('Your Devices'), findsWidgets);
   });
 }

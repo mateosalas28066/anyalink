@@ -1,5 +1,5 @@
 // lib/presentation/pages/home_page.dart
-// Comentario (ES): Home con cámara grande + tiles pequeños de demo (no persistentes).
+// Comentario (ES): Home con tarjeta de camara grande + tiles compactos de demo (no persistentes).
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +12,7 @@ import '../widgets/camera_card.dart';
 import '../widgets/device_tile.dart';
 import '../widgets/skeletons.dart';
 import '../widgets/ui_atoms.dart';
+import '../widgets/weather_header.dart';
 
 bool _isDemoId(String id) => id.startsWith('demo-');
 
@@ -45,7 +46,7 @@ class HomePage extends ConsumerWidget {
         ref.invalidate(devicesListProvider);
         // ignore: use_build_context_synchronously
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Estado enviado: ${!currentUiValue ? 'Encender' : 'Apagar'}')),
+          SnackBar(content: Text('Command sent: ${!currentUiValue ? 'Turn On' : 'Turn Off'}')),
         );
       } catch (e) {
         overridesCtl.remove(d.id);
@@ -98,11 +99,11 @@ class HomePage extends ConsumerWidget {
                   if (items.isEmpty) {
                     return CustomScrollView(
                       slivers: const [
-                        SliverToBoxAdapter(child: SectionTitle('Dispositivos')),
+                        SliverToBoxAdapter(child: SectionTitle('Your Devices')),
                         SliverToBoxAdapter(child: SizedBox(height: 8)),
                         SliverToBoxAdapter(
                           child: Text(
-                            'No hay dispositivos aún',
+                            'No devices yet',
                             style: TextStyle(color: Colors.black54),
                           ),
                         ),
@@ -112,7 +113,13 @@ class HomePage extends ConsumerWidget {
 
                   return CustomScrollView(
                     slivers: [
-                      const SliverToBoxAdapter(child: SectionTitle('Dispositivos')),
+                      const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.only(bottom: 12),
+                          child: WeatherHeader(),
+                        ),
+                      ),
+                      const SliverToBoxAdapter(child: SectionTitle('Your Devices')),
                       const SliverToBoxAdapter(child: SizedBox(height: 8)),
 
                       SliverPadding(
@@ -162,7 +169,7 @@ class HomePage extends ConsumerWidget {
                         child: Opacity(
                           opacity: 0.65,
                           child: Text(
-                            'Fuente: ${Env.useRealtime ? 'Realtime' : 'Polling'} · demo=${Env.addDemoTiles}',
+                            'Source: ${Env.useRealtime ? 'Realtime' : 'Polling'} | demo=${Env.addDemoTiles}',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ),
@@ -188,7 +195,7 @@ class _LoadingState extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: const [
-          SectionTitle('Dispositivos'),
+          SectionTitle('Your Devices'),
           SizedBox(height: 8),
           GridSkeleton(count: 4),
         ],
@@ -207,7 +214,7 @@ class _ErrorState extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionTitle('Dispositivos'),
+          const SectionTitle('Your Devices'),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -222,3 +229,9 @@ class _ErrorState extends StatelessWidget {
     );
   }
 }
+
+
+
+
+
+

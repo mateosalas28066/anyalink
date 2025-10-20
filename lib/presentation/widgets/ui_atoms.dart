@@ -29,8 +29,8 @@ class StatusChip extends StatelessWidget {
   const StatusChip({
     super.key,
     required this.isOn,
-    this.labelOn = 'Encendida',
-    this.labelOff = 'Apagada',
+    this.labelOn = 'On',
+    this.labelOff = 'Off',
   });
 
   @override

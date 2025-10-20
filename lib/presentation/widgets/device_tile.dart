@@ -115,7 +115,7 @@ class _StatusPill extends StatelessWidget {
       ),
       child: Text(
         // Comentario (ES): El pill nunca hace wrap; si no cabe, elipsis.
-        isOn ? 'Encendida' : 'Apagada',
+        isOn ? 'On' : 'Off',
         maxLines: 1,
         softWrap: false,
         overflow: TextOverflow.ellipsis,
