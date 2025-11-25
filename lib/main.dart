@@ -6,7 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/env.dart';
-import 'presentation/app_shell.dart';
+import 'presentation/auth/auth_gate.dart';
+import 'presentation/providers/theme_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,15 +26,26 @@ class AnyaLinkApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'AnyaLink',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: const Color(0xFF2EC27E),
-        brightness: Brightness.light,
-      ),
-      home: const AppShell(),
+    return ValueListenableBuilder<bool>(
+      valueListenable: themeNotifier,
+      builder: (context, isDarkMode, _) {
+        return MaterialApp(
+          title: 'AnyaLink',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            colorSchemeSeed: const Color(0xFF2EC27E),
+            brightness: Brightness.light,
+          ),
+          darkTheme: ThemeData(
+            useMaterial3: true,
+            colorSchemeSeed: const Color(0xFF2EC27E),
+            brightness: Brightness.dark,
+          ),
+          themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          home: const AuthGate(),
+        );
+      },
     );
   }
 }

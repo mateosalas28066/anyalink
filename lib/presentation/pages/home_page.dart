@@ -8,8 +8,12 @@ import '../../core/env.dart';
 import '../../infrastructure/supabase/device_repo.dart';
 import '../providers/device_list_providers.dart';
 import '../providers/device_providers.dart';
+import '../providers/auth_providers.dart'; // userRoleProvider
 import '../widgets/camera_card.dart';
 import '../widgets/device_tile.dart';
+import '../widgets/device_request_dialog.dart'; // DeviceRequestDialog
+import '../widgets/screen_message_dialog.dart'; // ScreenMessageDialog
+import 'admin_dashboard_page.dart'; // AdminDashboardPage
 import '../widgets/skeletons.dart';
 import '../widgets/ui_atoms.dart';
 import '../widgets/weather_header.dart';
@@ -19,8 +23,9 @@ bool _isDemoId(String id) => id.startsWith('demo-');
 List<DeviceEntity> _demoDevices() => const [
   DeviceEntity(id: 'demo-fan', alias: 'Ventilador', state: true, type: 'fan'),
   DeviceEntity(id: 'demo-feeder', alias: 'Comedero', state: false, type: 'dispenser'),
+  DeviceEntity(id: 'demo-led', alias: 'LED', state: true, type: 'led'),
   DeviceEntity(id: 'demo-fountain', alias: 'Fuente', state: false, type: 'fountain'),
-  DeviceEntity(id: 'demo-camera', alias: 'Camara', state: true, type: 'camera'),
+  DeviceEntity(id: 'demo-camera', alias: 'Camara', state: true, type: 'camera')
 ];
 
 class HomePage extends ConsumerWidget {
@@ -33,7 +38,35 @@ class HomePage extends ConsumerWidget {
     final overrides = ref.watch(optimisticOverridesProvider);
     final overridesCtl = ref.read(optimisticOverridesProvider.notifier);
 
+    final userRole = ref.watch(userRoleProvider).asData?.value;
+
     Future<void> onToggleDevice(DeviceEntity d, bool currentUiValue) async {
+      // Handle screen devices with message dialog
+      if (d.type?.toLowerCase() == 'screen') {
+        final newMessage = await showDialog<String>(
+          context: context,
+          builder: (_) => ScreenMessageDialog(currentMessage: d.message ?? ''),
+        );
+        
+        if (newMessage == null) return; // User cancelled
+        
+        try {
+          await repo.setMessageById(d.id, newMessage);
+          ref.invalidate(devicesListProvider);
+          // ignore: use_build_context_synchronously
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Message sent')),
+          );
+        } catch (e) {
+          // ignore: use_build_context_synchronously
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e')),
+          );
+        }
+        return;
+      }
+      
+      // Original toggle logic for non-screen devices
       overridesCtl.set(d.id, !currentUiValue);
 
       if (_isDemoId(d.id)) {
@@ -58,11 +91,33 @@ class HomePage extends ConsumerWidget {
     }
 
     return Scaffold(
+      floatingActionButton: userRole == 'guest'
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (_) => const DeviceRequestDialog(),
+                );
+              },
+              icon: const Icon(Icons.add_link),
+              label: const Text('Request Device'),
+            )
+          : null,
       appBar: AppBar(
         title: const Text('AnyaLink'),
         centerTitle: false,
-        actions: const [
-          Padding(
+        actions: [
+          if (userRole == 'admin')
+            IconButton(
+              icon: const Icon(Icons.admin_panel_settings),
+              tooltip: 'Admin Dashboard',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AdminDashboardPage()),
+                );
+              },
+            ),
+          const Padding(
             padding: EdgeInsets.only(right: 12),
             child: Icon(Icons.pets, color: Colors.black45),
           ),
@@ -98,13 +153,33 @@ class HomePage extends ConsumerWidget {
 
                   if (items.isEmpty) {
                     return CustomScrollView(
-                      slivers: const [
-                        SliverToBoxAdapter(child: SectionTitle('Your Devices')),
-                        SliverToBoxAdapter(child: SizedBox(height: 8)),
+                      slivers: [
+                        const SliverToBoxAdapter(child: SectionTitle('Your Devices')),
+                        const SliverToBoxAdapter(child: SizedBox(height: 8)),
                         SliverToBoxAdapter(
-                          child: Text(
-                            'No devices yet',
-                            style: TextStyle(color: Colors.black54),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'No devices assigned yet.',
+                                style: TextStyle(
+                                  color: Theme.of(context).brightness == Brightness.dark 
+                                    ? Colors.white70 
+                                    : Colors.black54,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (_) => const DeviceRequestDialog(),
+                                  );
+                                },
+                                icon: const Icon(Icons.add_link),
+                                label: const Text('Request Device Access'),
+                              ),
+                            ],
                           ),
                         ),
                       ],

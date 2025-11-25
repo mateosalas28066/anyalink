@@ -12,6 +12,24 @@ final authSessionProvider = StreamProvider<Session?>((ref) async* {
   yield* auth.onAuthStateChange.map((event) => event.session);
 });
 
+// Comentario (ES): Provider que obtiene el ROL del usuario actual desde la tabla 'profiles'.
+final userRoleProvider = FutureProvider<String?>((ref) async {
+  final session = await ref.watch(authSessionProvider.future);
+  if (session == null) return null;
+
+  try {
+    final row = await Supabase.instance.client
+        .from('profiles')
+        .select('role')
+        .eq('id', session.user.id)
+        .single();
+    return row['role'] as String?;
+  } catch (e) {
+    // Si falla (ej. no hay perfil), retornamos null o 'guest' por defecto
+    return 'guest';
+  }
+});
+
 // Comentario (ES): Acciones de autenticación simples (signIn, signUp, signOut).
 final authActionsProvider = Provider<_AuthActions>((ref) {
   final auth = Supabase.instance.client.auth;

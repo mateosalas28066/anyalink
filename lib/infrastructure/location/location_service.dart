@@ -27,7 +27,9 @@ class LocationService {
   Future<LocationPoint?> getOnce() async {
     if (!await _ensurePermission()) return null;
     final pos = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.low, // Comentario (ES): Precision baja es suficiente para clima.
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.low, // Comentario (ES): Precision baja es suficiente para clima.
+      ),
     );
     return LocationPoint(pos.latitude, pos.longitude);
   }

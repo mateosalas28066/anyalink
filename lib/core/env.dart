@@ -11,7 +11,7 @@ class Env {
   static const useRealtime = false;
 
   // Demo UI
-  static const addDemoTiles = true;
+  static const addDemoTiles = false;
   static const cameraAsset = 'assets/sample/camera.jpg';
 
   // Comentario (ES): Config del clima (Cali por defecto). Cambia si quieres otra ciudad.

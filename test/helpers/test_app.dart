@@ -53,6 +53,11 @@ class _FakeDeviceRepo implements DeviceRepository {
   }
 
   @override
+  Future<void> setMessageById(String id, String message) async {
+    // Mock implementation for tests
+  }
+
+  @override
   Stream<bool> watchStateByAlias(String alias) => _stateController.stream;
 
   @override

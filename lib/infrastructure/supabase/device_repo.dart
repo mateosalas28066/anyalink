@@ -10,12 +10,14 @@ class DeviceEntity {
   final String alias;
   final String? type; // e.g., 'light'
   final bool state;
+  final String? message; // For screen devices
 
   const DeviceEntity({
     required this.id,
     required this.alias,
     required this.state,
     this.type,
+    this.message,
   });
 
   factory DeviceEntity.fromMap(Map<String, dynamic> map) {
@@ -24,6 +26,7 @@ class DeviceEntity {
       alias: map['alias'] as String,
       type: map['type'] as String?,
       state: (map['state'] as bool?) ?? false,
+      message: map['message'] as String?,
     );
   }
 }
@@ -33,6 +36,7 @@ abstract class DeviceRepository {
   Future<List<DeviceEntity>> getAll();
   Future<void> setStateByAlias(String alias, bool newState);
   Future<void> setStateById(String id, bool newState);
+  Future<void> setMessageById(String id, String message);
   Stream<bool> watchStateByAlias(String alias);
   Stream<List<DeviceEntity>> watchAll();
 }
@@ -53,7 +57,7 @@ class DeviceRepositorySupabase implements DeviceRepository {
   Future<DeviceEntity?> getByAlias(String alias) async {
     final rows = await client
         .from('devices')
-        .select('id, alias, type, state')
+        .select('id, alias, type, state, message')
         .eq('alias', alias)
         .limit(1);
     if (rows.isEmpty) return null;
@@ -64,7 +68,7 @@ class DeviceRepositorySupabase implements DeviceRepository {
   Future<List<DeviceEntity>> getAll() async {
     final rows = await client
         .from('devices')
-        .select('id, alias, type, state')
+        .select('id, alias, type, state, message')
         .order('alias', ascending: true);
     if (rows.isEmpty) return const [];
     return (rows as List)
@@ -87,6 +91,8 @@ class DeviceRepositorySupabase implements DeviceRepository {
 
   @override
   Future<void> setStateById(String id, bool newState) async {
+    final user = client.auth.currentUser;
+    
     final response = await client
         .from('devices')
         .update({
@@ -96,6 +102,53 @@ class DeviceRepositorySupabase implements DeviceRepository {
         .eq('id', id);
     // ignore: avoid_print
     print('[DeviceRepo] update id=$id -> $newState resp=$response');
+    
+    // Register activity log
+    if (user != null) {
+      try {
+        await client.from('activity_logs').insert({
+          'user_id': user.id,
+          'device_id': id,
+          'action_type': 'state_change',
+          'action_value': newState.toString(),
+          'source': 'user',
+        });
+      } catch (e) {
+        // ignore: avoid_print
+        print('[DeviceRepo] Failed to log activity: $e');
+      }
+    }
+  }
+
+  @override
+  Future<void> setMessageById(String id, String message) async {
+    final user = client.auth.currentUser;
+    
+    final response = await client
+        .from('devices')
+        .update({
+          'message': message,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', id);
+    // ignore: avoid_print
+    print('[DeviceRepo] update message id=$id -> $message resp=$response');
+    
+    // Register activity log
+    if (user != null) {
+      try {
+        await client.from('activity_logs').insert({
+          'user_id': user.id,
+          'device_id': id,
+          'action_type': 'message_update',
+          'action_value': message,
+          'source': 'user',
+        });
+      } catch (e) {
+        // ignore: avoid_print
+        print('[DeviceRepo] Failed to log activity: $e');
+      }
+    }
   }
 
   @override
