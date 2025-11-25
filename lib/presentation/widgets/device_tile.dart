@@ -24,6 +24,9 @@ class DeviceTile extends StatelessWidget {
     final accent = deviceAccent(type, isOn: isOn);
     final icon = deviceIcon(type);
     final mq = MediaQuery.of(context);
+    final displayTitle = title.trim().isNotEmpty
+        ? title.trim()
+        : ((type ?? '').trim().isNotEmpty ? (type ?? '').trim() : 'Device');
     final double textScale = mq.textScaler.scale(1.0).clamp(1.0, 1.2);
     final minH = (68.0 * textScale).clamp(68.0, 90.0);
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
@@ -65,7 +68,7 @@ class DeviceTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        title,
+                        displayTitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
