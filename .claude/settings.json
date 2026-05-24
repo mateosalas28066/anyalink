@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter *)",
+      "Bash(dart *)",
+      "Bash(pio *)",
+      "Bash(mosquitto_pub *)",
+      "Bash(mosquitto_sub *)",
+      "Bash(node-red *)",
+      "Bash(npm *)",
+      "Bash(npx platformio-mcp *)",
+      "Bash(net start mosquitto)",
+      "Bash(net stop mosquitto)",
+      "Bash(net start \"Mosquitto Broker\")",
+      "Bash(net stop \"Mosquitto Broker\")",
+      "Bash(curl -s http://localhost:1880/*)",
+      "Read(w:\\anyalink\\**)",
+      "Edit(w:\\anyalink\\**)",
+      "Write(w:\\anyalink\\**)"
+    ]
+  },
+  "enabledPlugins": {
+    "supabase@claude-plugins-official": true
+  }
+}
