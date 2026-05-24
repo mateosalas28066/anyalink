@@ -10,12 +10,16 @@ class DeviceEntity {
   final String alias;
   final String? type; // e.g., 'light'
   final bool state;
+  final bool online;
+  final DateTime? lastSeen;
 
   const DeviceEntity({
     required this.id,
     required this.alias,
     required this.state,
     this.type,
+    this.online = false,
+    this.lastSeen,
   });
 
   factory DeviceEntity.fromMap(Map<String, dynamic> map) {
@@ -24,6 +28,35 @@ class DeviceEntity {
       alias: map['alias'] as String,
       type: map['type'] as String?,
       state: (map['state'] as bool?) ?? false,
+      online: (map['online'] as bool?) ?? false,
+      lastSeen: map['last_seen'] != null
+          ? DateTime.parse(map['last_seen'] as String)
+          : null,
+    );
+  }
+}
+
+class DeviceMetrics {
+  final double weightG;
+  final double temperatureC;
+  final double humidityPct;
+  final DateTime updatedAt;
+
+  const DeviceMetrics({
+    required this.weightG,
+    required this.temperatureC,
+    required this.humidityPct,
+    required this.updatedAt,
+  });
+
+  factory DeviceMetrics.fromMap(Map<String, dynamic> map) {
+    return DeviceMetrics(
+      weightG: (map['weight_g'] as num?)?.toDouble() ?? 0.0,
+      temperatureC: (map['temperature_c'] as num?)?.toDouble() ?? 0.0,
+      humidityPct: (map['humidity_pct'] as num?)?.toDouble() ?? 0.0,
+      updatedAt: map['updated_at'] != null
+          ? DateTime.parse(map['updated_at'] as String)
+          : DateTime.now(),
     );
   }
 }
@@ -35,6 +68,8 @@ abstract class DeviceRepository {
   Future<void> setStateById(String id, bool newState);
   Stream<bool> watchStateByAlias(String alias);
   Stream<List<DeviceEntity>> watchAll();
+  Future<void> sendCommand(String deviceId, String action, Map<String, dynamic> payload);
+  Stream<DeviceMetrics?> watchMetrics(String deviceId);
 }
 
 class DeviceRepositorySupabase implements DeviceRepository {
@@ -53,7 +88,7 @@ class DeviceRepositorySupabase implements DeviceRepository {
   Future<DeviceEntity?> getByAlias(String alias) async {
     final rows = await client
         .from('devices')
-        .select('id, alias, type, state')
+        .select('id, alias, type, state, online, last_seen')
         .eq('alias', alias)
         .limit(1);
     if (rows.isEmpty) return null;
@@ -64,7 +99,7 @@ class DeviceRepositorySupabase implements DeviceRepository {
   Future<List<DeviceEntity>> getAll() async {
     final rows = await client
         .from('devices')
-        .select('id, alias, type, state')
+        .select('id, alias, type, state, online, last_seen')
         .order('alias', ascending: true);
     if (rows.isEmpty) return const [];
     return (rows as List)
@@ -162,6 +197,61 @@ class DeviceRepositorySupabase implements DeviceRepository {
     };
 
     return controller.stream;
+  }
+
+  @override
+  Future<void> sendCommand(
+    String deviceId,
+    String action,
+    Map<String, dynamic> payload,
+  ) async {
+    await client.from('device_commands').insert({
+      'device_id': deviceId,
+      'action': action,
+      'payload': payload,
+      'status': 'pending',
+    });
+  }
+
+  @override
+  Stream<DeviceMetrics?> watchMetrics(String deviceId) async* {
+    final rows = await client
+        .from('device_metrics')
+        .select()
+        .eq('device_id', deviceId)
+        .limit(1);
+    if (rows.isNotEmpty) {
+      yield DeviceMetrics.fromMap(_normalizeRow(rows.first));
+    } else {
+      yield null;
+    }
+
+    final controller = StreamController<DeviceMetrics?>();
+
+    final channel = client.channel('public:device_metrics-$deviceId')
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'device_metrics',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'device_id',
+          value: deviceId,
+        ),
+        callback: (payload) {
+          final newRow = payload.newRecord;
+          if (newRow.isNotEmpty) {
+            controller.add(DeviceMetrics.fromMap(Map<String, dynamic>.from(newRow)));
+          }
+        },
+      )
+      ..subscribe();
+
+    controller.onCancel = () async {
+      await client.removeChannel(channel);
+    };
+
+    yield* controller.stream;
   }
 }
 

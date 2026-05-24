@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# AnyaLink — credenciales locales (no commitear)
+lib/core/env.dart
+firmware/anyalink_node/include/secrets.h

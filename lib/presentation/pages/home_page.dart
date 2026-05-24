@@ -8,6 +8,7 @@ import 'package:anyalink_1/core/env.dart';
 import 'package:anyalink_1/presentation/providers/device_list_providers.dart';
 import 'package:anyalink_1/presentation/providers/device_providers.dart';
 import 'package:anyalink_1/presentation/widgets/device_card.dart';
+import 'package:anyalink_1/presentation/widgets/feeder_card.dart';
 import 'package:anyalink_1/presentation/widgets/ui_atoms.dart';
 
 class HomePage extends ConsumerWidget {
@@ -98,6 +99,9 @@ class HomePage extends ConsumerWidget {
                       const SectionTitle('Dormitorio'),
                       ...items.map(
                         (device) {
+                          if (device.type == 'feeder') {
+                            return FeederCard(device: device);
+                          }
                           final isOnUi = overrides[device.id] ?? device.state;
                           return DeviceCard(
                             title: device.alias,
