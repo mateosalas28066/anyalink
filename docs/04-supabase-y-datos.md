@@ -1,61 +1,84 @@
 # Supabase y Datos
 
-## Tabla usada por la app
+## Tablas del MVP
 
-La app actual usa la tabla `devices`. Los campos requeridos por el codigo son:
+### `devices`
 
-- `id`: identificador del dispositivo. Se usa para updates y como clave de lista.
-- `alias`: nombre visible y busqueda por alias.
-- `type`: tipo para icono, color y separacion de camaras.
-- `state`: booleano de encendido/apagado.
-- `updated_at`: se actualiza al escribir estado.
+Una fila por dispositivo. Columnas usadas por el código:
 
-## Lecturas
+- `id` (uuid, PK)
+- `alias` (text) — nombre visible y key de búsqueda.
+- `type` (text) — `feeder`, `camera`, `light`, etc. Determina el widget.
+- `state` (bool) — encendido/apagado (para tipos simples).
+- `online` (bool, default `false`) — escrito por Node-RED desde el topic `.../online` (retained).
+- `last_seen` (timestamptz) — actualizado con cada heartbeat online/offline.
+- `updated_at` (timestamptz) — escrito al cambiar `state`.
 
-`DeviceRepositorySupabase.getAll()` consulta:
+### `device_metrics`
 
-```text
-devices select id, alias, type, state order by alias
+Último valor por dispositivo (un row por `device_id`):
+
+- `device_id` (uuid, PK, FK → `devices.id` cascade delete)
+- `weight_g` (numeric)
+- `temperature_c` (numeric)
+- `humidity_pct` (numeric)
+- `updated_at` (timestamptz)
+
+Patrón de escritura: Node-RED hace `POST /rest/v1/device_metrics` con header `Prefer: resolution=merge-duplicates` (upsert por PK).
+
+### `device_commands`
+
+Cola de comandos pendientes:
+
+- `id` (uuid, PK, default `gen_random_uuid()`)
+- `device_id` (uuid, FK → `devices.id` cascade delete)
+- `action` (text) — por ahora solo `'dispense'`.
+- `payload` (jsonb) — ej. `{"portion": 1}`.
+- `status` (text, default `'pending'`) — `pending` → `sent` → `done`.
+- `created_at`, `completed_at` (timestamptz)
+
+Índice parcial: `(status) WHERE status = 'pending'` para acelerar el poll de Node-RED.
+
+## Migración
+
+Ver `supabase/migrations/0001_mvp_esp32.sql`. Aplicar desde el SQL Editor del dashboard o vía plugin Supabase de Claude Code. Seed: inserta `('Dispensador', 'feeder', false)`.
+
+## Row Level Security
+
+Para el MVP las tres tablas corren con **RLS desactivada** (LAN doméstica, proyecto académico). Esto significa:
+
+- La anon key puede leer/escribir todo. Es el mismo nivel de exposición que ya tenía `devices` antes del MVP.
+- Si en el futuro se activa RLS, Node-RED debe seguir usando service_role (no afectado por RLS) y la app debe agregar `user_id` y policies por usuario.
+
+Comando para activar/desactivar:
+
+```sql
+alter table devices         disable row level security;
+alter table device_metrics  disable row level security;
+alter table device_commands disable row level security;
 ```
 
-`getByAlias(alias)` consulta un dispositivo por `alias` con limite 1.
+## Lecturas de la app
 
-## Escrituras
-
-La UI principal escribe con `setStateById(id, newState)`:
+`DeviceRepositorySupabase.getAll()`:
 
 ```text
-update devices
-set state = newState, updated_at = now
-where id = id
+devices select id, alias, type, state, online, last_seen order by alias
 ```
 
-Tambien existe `setStateByAlias(alias, newState)`, usado por providers antiguos o flujos de dispositivo unico.
+`DeviceRepositorySupabase.getByAlias(alias)`: ídem con `eq.alias`, limit 1.
 
-## Streams y polling
+`watchMetrics(deviceId)`: yield inicial vía SELECT + canal Realtime `public:device_metrics-{deviceId}` filtrado por `device_id`.
 
-Realtime:
+`watchAll()`: SELECT inicial + canal Realtime `public:devices-list` (cualquier cambio dispara refetch completo).
 
-- `watchStateByAlias(alias)` escucha updates filtrados por alias.
-- `watchAll()` escucha cualquier cambio en `devices` y vuelve a consultar la lista completa.
+## Escrituras de la app
 
-Polling:
+- `setStateById(id, newState)` → `update devices set state, updated_at where id = id`.
+- `sendCommand(deviceId, action, payload)` → `insert into device_commands (...) values (...)`.
 
-- `pollStateByAlias()` consulta el estado por alias periodicamente.
-- `pollAll()` consulta la lista completa periodicamente y emite si cambia longitud, id, alias o state.
+## Credenciales
 
-El flag activo es `Env.useRealtime`. En el codigo actual esta apagado.
-
-## Requisitos esperados de datos
-
-Para que un dispositivo real aparezca y pueda cambiarse desde la app:
-
-- Debe existir una fila en `devices`.
-- `id` debe ser estable.
-- `alias` debe coincidir con el alias esperado por la app o por el bridge.
-- `state` debe ser booleano.
-- `type` debe existir o aceptar valor nulo; si es nulo, la UI usa icono generico.
-
-## Seguridad de configuracion
-
-El codigo actual contiene credenciales y configuracion sensible hardcodeadas en Dart y Python. La documentacion nueva no reproduce esos valores. Antes de produccion, moverlos a variables de entorno, archivos locales ignorados por Git o configuracion segura de build.
+- **anon key**: en `lib/core/env.dart` (gitignored). Usada por la app Flutter.
+- **service_role key**: hardcodeada en `infra/node-red/flows.json` para el MVP. Es la única forma simple de que Node-RED bypassee RLS si en el futuro se activa.
+- Las dos viven solo en local — la app es desktop/mobile sin distribución pública aún.

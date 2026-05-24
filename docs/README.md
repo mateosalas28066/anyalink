@@ -1,6 +1,6 @@
-# Documentacion Funcional de AnyaLink
+# Documentación funcional de AnyaLink
 
-Esta carpeta resume el estado real del proyecto segun el codigo actual. Sirve para retomar el desarrollo sin depender de memoria ni de documentacion historica que pueda estar desactualizada.
+Refleja el estado actual del MVP. Cuando cambies algo en el código, actualizá la doc correspondiente.
 
 ## Lectura recomendada
 
@@ -8,14 +8,20 @@ Esta carpeta resume el estado real del proyecto segun el codigo actual. Sirve pa
 2. [Arquitectura](02-arquitectura.md)
 3. [Funcionalidades](03-funcionalidades.md)
 4. [Supabase y datos](04-supabase-y-datos.md)
-5. [Bridge IoT](05-bridge-iot.md)
+5. [Bridge IoT (TP-Link, congelado)](05-bridge-iot.md)
 6. [Desarrollo y testing](06-desarrollo-y-testing.md)
 7. [Pendientes y riesgos](07-pendientes-y-riesgos.md)
+8. [Visión y roadmap](08-informacion-extra-chatgpt.md)
+
+## READMEs específicos
+
+- Firmware ESP32: [`firmware/anyalink_node/README.md`](../firmware/anyalink_node/README.md)
+- Infra local (Mosquitto + Node-RED): [`infra/README.md`](../infra/README.md)
 
 ## Estado actual en una frase
 
-AnyaLink es una app Flutter que muestra un dashboard de dispositivos desde Supabase, permite cambiar estados con UI optimista y se apoya en scripts Python para sincronizar esos estados con hardware local TP-Link.
+App Flutter que muestra dispositivos desde Supabase y comanda un ESP32 dispensador (servo + sensores HX711/DHT22) vía un broker MQTT local puenteado a Supabase por Node-RED.
 
-## Nota sobre documentacion historica
+## Nota sobre documentación histórica
 
-`AnyaLink_Documentation.md` se mantiene como referencia historica. Algunas partes mencionan capacidades como Node-RED, RBAC, rutinas o auditoria que no aparecen implementadas en el codigo actual revisado.
+`AnyaLink_Documentation.md` se mantiene como referencia. Algunas capacidades descritas allí (RBAC, rutinas programadas, alertas push, ESP32-CAM) son futuras, no parte del MVP.

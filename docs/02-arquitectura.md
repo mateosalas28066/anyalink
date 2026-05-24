@@ -2,30 +2,31 @@
 
 ## Vista general
 
-El flujo esperado es:
-
 ```text
-Flutter UI -> Riverpod providers -> Supabase devices -> Bridge Python -> Hardware TP-Link
+Flutter app  ── REST + Realtime ──►  Supabase  ◄── REST ──  Node-RED  ◄── MQTT ──  Mosquitto  ◄── MQTT ──  ESP32
+                                     (Postgres)              (local)                (local)                (servo + HX711 + DHT22 + OLED)
 ```
 
-La app escribe cambios de estado en Supabase. El bridge local observa Supabase y el hardware, alinea ambos lados y actualiza la base de datos cuando el cambio nace en el dispositivo fisico.
+Dos lazos lógicos:
+
+- **Comandos** (app → hardware): la app inserta una fila en `device_commands`. Node-RED polea cada 2 s, publica en `anyalink/device/{id}/command` (QoS 1) y marca la fila como `sent`. El ESP32 ejecuta y publica un ACK en `.../state`. Node-RED escucha el ACK y marca `done`.
+- **Telemetría** (hardware → app): el ESP32 publica cada 5 s en `anyalink/device/{id}/metrics` (QoS 0). Node-RED hace upsert en `device_metrics`. La app, suscrita a Realtime sobre esa tabla, refresca el `FeederCard` en vivo. Una publicación retained en `.../online` (QoS 1) actualiza `devices.online` y `last_seen`.
 
 ## Capas Flutter
 
-- `core`: configuracion global. Hoy contiene `Env` con URL de Supabase, alias principal, flags de realtime/demo y ruta del asset de camara.
-- `presentation`: capa activa de la app. Incluye `HomePage`, `AuthGate`, `LoginPage`, providers Riverpod, widgets de tarjetas y tema por tipo de dispositivo.
-- `infrastructure/supabase`: repositorio real usado por la UI para leer y escribir `devices`.
-- `domain`: entidad `Device`, contrato `DevicesRepository` y use cases. Esta capa existe pero no es el camino principal usado por `HomePage`.
-- `data`: datasource y repository implementation alineados con Clean Architecture. Tambien estan presentes, pero la UI actual usa el repositorio de `infrastructure`.
+- `core`: `Env` con URL y anon key de Supabase, alias del dispensador, flag `useRealtime`.
+- `presentation`: `HomePage`, `AuthGate`, `LoginPage`, providers Riverpod, widgets `DeviceCard`, `FeederCard`, `CameraCard`.
+- `infrastructure/supabase`: `DeviceRepositorySupabase` con `DeviceEntity`, `DeviceMetrics`, `sendCommand`, `watchMetrics`, polling y Realtime.
+- `domain` y `data`: Clean Architecture parcial heredada, no es la ruta activa.
 
 ## Providers principales
 
 - `supabaseClientProvider`: expone `Supabase.instance.client`.
 - `deviceRepoProvider`: crea `DeviceRepositorySupabase`.
-- `devicesListProvider`: obtiene la lista de dispositivos por Realtime o polling segun `Env.useRealtime`.
-- `toggleByIdProvider`: accion por familia para cambiar estado por id, aunque `HomePage` actualmente llama directo al repositorio.
-- `optimisticOverridesProvider`: guarda estados temporales por id para que la UI responda antes de que vuelva el dato desde Supabase.
-- `authSessionProvider` y `authActionsProvider`: existen para Supabase Auth, pero el gate actual no los usa.
+- `devicesListProvider`: stream de la lista de dispositivos (Realtime si `Env.useRealtime`).
+- `toggleByIdProvider`: action family para toggles, aunque `HomePage` llama directo al repo.
+- `optimisticOverridesProvider`: estados temporales por id para UI responsiva.
+- `authSessionProvider` y `authActionsProvider`: existen pero `AuthGate` no los consume aún.
 
 ## Flujo de pantalla principal
 
@@ -33,16 +34,23 @@ La app escribe cambios de estado en Supabase. El bridge local observa Supabase y
 2. `AnyaLinkApp` monta `AuthGate`.
 3. `AuthGate` devuelve `HomePage` directamente.
 4. `HomePage` escucha `devicesListProvider`.
-5. La lista se separa entre camaras y otros dispositivos.
-6. Cada dispositivo no-camara se pinta como `DeviceTile`.
-7. Al tocar un tile o switch, se aplica override optimista y se escribe el nuevo estado por id.
-8. La lista se invalida para refrescar desde Supabase.
+5. Cada device se dispatcha por `type`:
+   - `type == 'camera'`  → `CameraCard`.
+   - `type == 'feeder'`  → `FeederCard` (badge online + métricas en vivo + botón Dispensar).
+   - resto → `DeviceCard` (toggle optimista).
+6. `FeederCard.Dispensar` → `repo.sendCommand(id, 'dispense', {portion: 1})` → fila pending en `device_commands`.
+7. `DeviceCard` toggle → override optimista + `setStateById`.
 
-## Realtime vs polling
+## Infra local
 
-El repositorio soporta canales Realtime con `onPostgresChanges`, pero el flag actual `Env.useRealtime = false` hace que los providers usen polling:
+- **Mosquitto** corre como servicio Windows. Config en `W:\Mosquitto\mosquitto.conf` (copia versionada en `infra/mosquitto/mosquitto.conf`).
+- **Node-RED** corre desde npm global (`node-red` en consola, puerto 1880). Flujos vivos en `W:\anyalink\infra\node-red\flows.json` (no en `~/.node-red/`, está pinneado a esa ruta).
+- Los 4 flujos son: poll de comandos pending, ACK de state, upsert de métricas, heartbeat online. Detalle en `infra/README.md`.
 
-- `pollStateByAlias`: consulta un dispositivo cada intervalo.
-- `pollAll`: consulta la lista completa y emite solo si detecta cambios relevantes.
+## Por qué Node-RED y no llamadas directas ESP32 → Supabase
 
-Esto simplifica estabilidad local cuando Realtime no esta configurado o no es confiable.
+La librería HTTP de Supabase para ESP32 es frágil (Realtime sobre WebSocket no es estable). MQTT es el protocolo natural del edge y Mosquitto + Node-RED ya es el patrón usado en la versión anterior del proyecto. Node-RED encapsula la traducción protocolo/auth y deja al firmware solo hablar MQTT con JSON simple.
+
+## Por qué Realtime activado
+
+Las métricas cambian cada 5 s y la app debe verlas casi al instante. Polling de 800 ms a la tabla `device_metrics` por cada device es ineficiente y aún así introduce latencia. Realtime via `onPostgresChanges` filtrado por `device_id` es la ruta natural. El polling sigue disponible como fallback en el repo.

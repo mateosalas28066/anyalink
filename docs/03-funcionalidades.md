@@ -2,60 +2,46 @@
 
 ## Dashboard de dispositivos
 
-La pantalla principal es `HomePage`. Muestra el titulo `AnyaLink`, una seccion `Dispositivos`, tiles compactos para dispositivos comunes y una tarjeta de camara cuando existe algun dispositivo con tipo `camera`.
-
-La UI usa Material 3, fondo gris claro, tarjetas blancas y acentos por tipo de dispositivo.
+`HomePage` muestra el título `AnyaLink`, sección `Dispositivos` con tarjetas y, si existe algún device tipo `camera`, su tarjeta. Material 3, fondo gris claro, acentos por tipo.
 
 ## Lista desde Supabase
 
-`devicesListProvider` obtiene dispositivos desde `DeviceRepositorySupabase.getAll()`. La consulta selecciona:
+`devicesListProvider` lee de `DeviceRepositorySupabase.getAll()`. Columnas: `id, alias, type, state, online, last_seen`, ordenado por `alias`.
 
-- `id`
-- `alias`
-- `type`
-- `state`
+## `FeederCard` (tipo `feeder`)
 
-La lista se ordena por `alias`. Si no hay dispositivos, la pantalla muestra un estado vacio.
+Para el dispensador (alias `Dispensador`, type `feeder`):
 
-## Toggle con estado optimista
+- **Badge online**: verde si `devices.online == true`, gris si offline. Se actualiza cuando el ESP32 publica retained en `anyalink/device/{id}/online`.
+- **Métricas en vivo**: tres tiles con peso (g), temperatura (°C), humedad (%). Vienen de `device_metrics` via Realtime (`watchMetrics(deviceId)`).
+- **Botón Dispensar**: inserta una fila en `device_commands` con `action='dispense', payload={portion:1}, status='pending'`. Node-RED la recoge en ≤2 s y la publica al ESP32. Snackbar de confirmación local.
 
-Al cambiar un dispositivo:
+## `DeviceCard` (otros tipos)
 
-1. `HomePage` calcula el valor actual visible.
-2. `optimisticOverridesProvider` guarda el valor opuesto para ese id.
-3. Si es dispositivo demo, solo agenda limpiar el override.
-4. Si es dispositivo real, llama `setStateById`.
-5. Si el update funciona, invalida `devicesListProvider` y muestra un SnackBar.
-6. Si falla, remueve el override y muestra el error.
+Toggle con estado optimista:
 
-Esto hace que el switch responda rapido aunque Supabase o el bridge tarden en confirmar.
+1. `HomePage` calcula valor actual visible.
+2. `optimisticOverridesProvider` guarda el opuesto para ese id.
+3. Si es device demo, solo limpia el override.
+4. Si es real, llama `setStateById`.
+5. Si éxito, invalida `devicesListProvider` y muestra snackbar.
+6. Si error, remueve override y muestra el error.
 
-## Camara y tiles demo
+## `CameraCard` (tipo `camera`)
 
-`Env.addDemoTiles = true` agrega dispositivos demo cuando no aparecen por alias en Supabase:
+Render del asset `Env.cameraAsset` (`assets/sample/camera.jpg`). Visualización estática por ahora.
 
-- Ventilador
-- Comedero
-- Fuente
-- Camara
+## Tiles demo
 
-Los ids demo empiezan por `demo-`. No se escriben en Supabase. La camara usa `CameraCard` y carga `Env.cameraAsset`.
+`Env.addDemoTiles = true` agrega tiles falsos cuando no existen por alias en Supabase: Ventilador, Comedero, Fuente, Camara. Ids prefijo `demo-`, no se escriben en Supabase.
 
 ## Auth preparada, no activa
 
-Existen:
-
-- `LoginPage` con email y credenciales de acceso.
-- `authSessionProvider` para escuchar la sesion de Supabase.
-- `authActionsProvider` con sign in, sign up y sign out.
-
-Pero `AuthGate` actualmente devuelve siempre `HomePage`. Por eso la app no exige login aunque exista la pantalla.
+Existen `LoginPage`, `authSessionProvider`, `authActionsProvider`. `AuthGate` devuelve siempre `HomePage`. Para activar login hay que cablear el gate a la sesión.
 
 ## Realtime o polling
 
-`Env.useRealtime` decide el modo:
+`Env.useRealtime` controla:
 
-- `true`: usa canales Realtime de Supabase.
-- `false`: usa polling desde `DeviceRepositorySupabase`.
-
-El valor actual es `false`, asi que el comportamiento esperado en desarrollo es polling.
+- `true` (actual): canales Realtime para devices y métricas.
+- `false`: fallback a polling (`pollAll`, `pollStateByAlias`) en el repo.

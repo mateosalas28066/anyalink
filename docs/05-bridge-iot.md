@@ -1,51 +1,47 @@
-# Bridge IoT
+# Bridge IoT (TP-Link Kasa/Tapo) — CONGELADO en el MVP
 
-## Rol del bridge
+> **Estado**: este bridge Python para TP-Link Kasa/Tapo está **congelado** mientras dura el MVP. No se modifica. La integración IoT activa del MVP es el ESP32 vía MQTT (ver `firmware/anyalink_node/README.md` y `infra/README.md`).
 
-El bridge Python conecta Supabase con dispositivos TP-Link en la red local. Su objetivo es mantener sincronizados tres estados:
+## Por qué quedó congelado
+
+El alcance del MVP es el dispensador ESP32 (servo + HX711 + DHT22) y su integración Supabase. Mantener en paralelo el bridge TP-Link multiplica superficie de fallo y trabajo de mantenimiento. El bridge sigue siendo funcional, pero no se actualiza ni se prueba en el MVP.
+
+## Qué hace el bridge cuando se usa
+
+Conecta Supabase con dispositivos TP-Link en la red local:
 
 ```text
-App Flutter <-> Supabase devices <-> Bridge Python <-> Hardware TP-Link
+App Flutter ↔ Supabase devices ↔ Bridge Python ↔ Hardware TP-Link
 ```
 
-Si la app cambia `devices.state`, el bridge aplica ese cambio al hardware. Si el hardware cambia manualmente, el bridge actualiza Supabase.
+- Si la app cambia `devices.state`, el bridge aplica al hardware.
+- Si el hardware cambia manualmente, el bridge actualiza Supabase.
 
 ## Bridge unificado
 
-`bridge/anyalink_bridge_unified.py` cubre:
+`bridge/anyalink_bridge_unified.py` (basado en `anyalink_bridge_unified.example.py`) cubre:
 
-- Bombillo Kasa con alias de base de datos `Lampara`.
+- Bombillo Kasa con alias DB `Lampara`.
 - Regleta Tapo/HS300 con hijos como `Fuente` y `Ventilador`.
 - Descubrimiento por MAC/IP.
-- Reconexion si falla el update del dispositivo.
+- Reconexión si falla `update()` del dispositivo.
 - Anti-rebote para evitar ecos entre DB y hardware.
-- Ventana de comando pendiente despues de aplicar un cambio.
+- Ventana de comando pendiente después de aplicar un cambio.
 
-Este script contiene configuracion sensible hardcodeada y debe migrarse antes de usarse como base estable.
+Configuración via env vars (ver el ejemplo). El servicio no está integrado en el ciclo de vida de la app Flutter; corre como proceso separado.
 
 ## Scripts auxiliares
 
-- `discover_kasa.py`: descubre dispositivos Kasa en la LAN.
-- `test_kasa.py`, `status.py`, `on.py`, `off.py`: pruebas rapidas contra bombillo por IP.
-- `kasa_bridge_alias.py`: bridge anterior por alias.
-- `kasa_bridge_mac.py`: bridge anterior por MAC.
-- `hs300_cli.py`: CLI para listar y controlar hijos de una regleta HS300/Tapo usando credenciales desde variables de entorno.
-- `config.example.json`: ejemplo de configuracion local esperada.
+- `discover_kasa.py`, `test_kasa.py`, `status.py`, `on.py`, `off.py`: utilidades rápidas.
+- `hs300_cli.py`: CLI para listar y controlar hijos de regleta HS300/Tapo.
+- `config.example.json`: forma esperada de configuración local.
 
-## Sincronizacion bidireccional
+## Cuándo reactivarlo (post-MVP)
 
-El bridge compara el estado anterior de Supabase y hardware:
+Cuando se quiera volver a integrar plugs TP-Link al ecosistema, el plan razonable es:
 
-- Si cambia Supabase, aplica DB -> hardware.
-- Si cambia hardware y no hay comando pendiente, aplica hardware -> DB.
-- Si hay desalineacion sin cambio claro, prefiere alinear hardware con DB.
+1. Mover su sincronización a Node-RED via MQTT, eliminando el proceso Python separado.
+2. Modelar cada plug como un device más con su propio `type` y semántica de `state`.
+3. Mover credenciales fuera del repo.
 
-El cooldown evita escribir varias veces por el mismo cambio.
-
-## Riesgos operativos
-
-- Requiere que el equipo que corre el bridge este en la misma red que los dispositivos.
-- IPs pueden cambiar; por eso existen hints y redescubrimiento por MAC.
-- Las credenciales actuales no deben permanecer en codigo.
-- El bridge no esta integrado al ciclo de vida de la app Flutter; se ejecuta como proceso separado.
-- Si Supabase, red local o discovery fallan, la UI puede mostrar estados atrasados hasta el siguiente polling.
+Mientras tanto, la fuente de verdad para el MVP es el ESP32.
